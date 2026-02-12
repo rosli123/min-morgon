@@ -4,11 +4,12 @@ function App() {
   const [time, setTime] = useState(new Date());
   const [progress, setProgress] = useState(0); // Sunrise progress (0-100)
   const [temp, setTemp] = useState([]); // Temperature
-  // const {trains, setTrains} = useState([]);
+  const [trains, setTrains] = useState([]);
 
   useEffect(() => {
 
     fetchTemperature();
+    fetchTrains();
     // Update time every second
     const timeInterval = setInterval(() => {
       setTime(new Date()); 
@@ -26,6 +27,7 @@ function App() {
       });
     }, 600);
 
+    
     // Cleanup function - Stop the timer after the sunrise 
     return function cleanup() {
       clearInterval(timeInterval);
@@ -87,7 +89,57 @@ const fetchTemperature = function() {
     });
   };
 
-  
+  let transportAdvice = "";
+
+  if (temp && temp.temp !== undefined){
+    if (temp.temp <= 0){
+      transportAdvice = "Det är kallt och halt ute, bussen rekommenderas!"
+    }
+    else if (temp.temp > 0 && temp.temp < 10) {
+      transportAdvice = "Perfekt väder för att cykla!"
+    }
+    else {
+      transportAdvice = "Det är fint väder ute, ta en promenad om du inte har bråttom!"
+    }
+  }
+
+  const fetchTrains = function() {
+    const url = "https://api.trafikinfo.trafikverket.se/v2/data.json";
+    const myKey = "24327abb5b8d4725a3e4de2062da9148"; // Klistra in nyckeln från din bild här!
+
+    // Vi frågar efter avgångar från Linköping (Lp) till Stockholm (Cst)
+    const requestBody = `
+    <REQUEST>
+      <LOGIN authenticationkey="${myKey}" />
+      <QUERY objecttype="TrainAnnouncement" orderby="AdvertisedTimeAtLocation">
+        <FILTER>
+          <AND>
+            <EQ name="LocationSignature" value="Lp" />
+            <EQ name="ActivityType" value="Avgang" />
+            <EQ name="ToLocation.LocationName" value="Cst" />
+            <GT name="AdvertisedTimeAtLocation" value="2026-02-12T00:00:00" />
+          </AND>
+        </FILTER>
+        <INCLUDE>AdvertisedTimeAtLocation</INCLUDE>
+        <INCLUDE>TrackAtLocation</INCLUDE>
+      </QUERY>
+    </REQUEST>`;
+
+    fetch(url, {
+      method: "POST",
+      body: requestBody,
+      headers: { "Content-Type": "text/xml" }
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.RESPONSE.RESULT[0].TrainAnnouncement) {
+        // Vi sparar de två närmaste avgångarna
+        setTrains(data.RESPONSE.RESULT[0].TrainAnnouncement.slice(0, 2));
+      }
+    })
+    .catch(err => console.error("Tågfel:", err));
+  };
+
 
   return (
     <div 
@@ -115,10 +167,30 @@ const fetchTemperature = function() {
       {/* Kort för info (Frostat glas) */}
       <div className="w-full max-w-md bg-white/10 backdrop-blur-md border border-white/10 p-6 rounded-[2rem] shadow-2xl">
         <h1 className="text-2xl font-light mb-2">Godmorgon</h1>
-        
-        
+        <p className="text-sm opacity-90 font-light leading-relaxed mb-4">
+          {transportAdvice}
+        </p>
+
+        {/* Tåginformation från Trafikverket */}
+        <div className="pt-4 border-t border-white/10 mt-4">
+          <h3 className="text-[10px] uppercase tracking-widest opacity-50 mb-3">Nästa tåg mot Stockholm</h3>
+          
+          {trains && trains.length > 0 ? (
+            trains.map((train, index) => {
+              // Vi snyggar till tiden (tar bort datumet och visar bara HH:MM)
+              const trainTime = train.AdvertisedTimeAtLocation.split("T")[1].substring(0, 5);
+              return (
+                <div key={index} className="flex justify-between items-center mb-2 last:mb-0">
+                  <span className="text-xl font-light">{trainTime}</span>
+                  <span className="text-xs opacity-60">Spår {train.TrackAtLocation || "?"}</span>
+                </div>
+              );
+            })
+          ) : (
+            <p className="text-xs opacity-50 italic">Hämtar tågtider...</p>
+          )}
+        </div>
       </div>
-      
     </div>
   );
   
